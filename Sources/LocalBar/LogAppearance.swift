@@ -5,7 +5,6 @@ import LocalBarCore
 private struct LogAppearanceSettings: Codable, Equatable {
     var imported: LogTheme?
     var useImported = false
-    var useFont = false
     var fontSizeAdjustment: Double?
 }
 
@@ -18,15 +17,12 @@ private struct LogAppearanceSettings: Codable, Equatable {
     @Published var error: String?
     var imported: LogTheme? { settings.imported }
     var theme: LogTheme? { settings.useImported ? settings.imported : nil }
-    var useFont: Bool {
-        get { settings.useFont }
-        set { settings.useFont = newValue }
+    private var selectedFont: NSFont? {
+        guard let font = theme?.font else { return nil }
+        return NSFont(name: font.name, size: font.size)
+            ?? NSFontManager.shared.font(withFamily: font.name, traits: [], weight: 5, size: font.size)
+            ?? .monospacedSystemFont(ofSize: font.size, weight: .regular)
     }
-    var importedFont: NSFont? {
-        guard let font = imported?.font else { return nil }
-        return NSFont(name: font.name, size: font.size) ?? NSFontManager.shared.font(withFamily: font.name, traits: [], weight: 5, size: font.size)
-    }
-    private var selectedFont: NSFont? { theme != nil && useFont ? importedFont : nil }
     private var viewerBaseFont: NSFont { selectedFont ?? .monospacedSystemFont(ofSize: 13, weight: .regular) }
     var viewerFont: NSFont {
         resized(viewerBaseFont, to: viewerBaseFont.pointSize + (settings.fontSizeAdjustment ?? 0))
@@ -48,7 +44,9 @@ private struct LogAppearanceSettings: Codable, Equatable {
         settings = UserDefaults.standard.data(forKey: "logAppearance")
             .flatMap { try? JSONDecoder().decode(LogAppearanceSettings.self, from: $0) } ?? LogAppearanceSettings()
     }
-    func selectImported(_ value: Bool) { settings.useImported = value }
+    func selectImported(_ value: Bool) {
+        settings = LogAppearanceSettings(imported: settings.imported, useImported: value)
+    }
 
     func importGhostty() {
         guard let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.mitchellh.ghostty") else {
@@ -86,8 +84,7 @@ private struct LogAppearanceSettings: Codable, Equatable {
             defer { importing = false }
             do {
                 let theme = try await operation()
-                settings.imported = theme
-                settings.useImported = true
+                settings = LogAppearanceSettings(imported: theme, useImported: true)
             } catch { self.error = error.localizedDescription }
         }
     }
@@ -109,11 +106,6 @@ struct LogAppearanceMenu: View {
                 Button("Ghostty") { appearance.importGhostty() }
                 Button("iTerm2") { appearance.importITerm() }
             }
-            if appearance.importedFont != nil {
-                Divider()
-                Toggle("Use imported font and size", isOn: Binding(get: { appearance.useFont }, set: { appearance.useFont = $0 }))
-                    .disabled(appearance.theme == nil)
-            }
             Divider()
             Button("Larger text") { appearance.changeFontSize(by: 1) }.keyboardShortcut("+")
                 .disabled(appearance.viewerFont.pointSize >= 72)
@@ -123,7 +115,7 @@ struct LogAppearanceMenu: View {
         } label: { Label("Log appearance", systemImage: "paintpalette") }
         .menuStyle(.borderlessButton).fixedSize()
         .disabled(appearance.importing)
-        .help("\(appearance.theme?.name ?? "System") colors. Imports save a copy for all log windows.")
+        .help("\(appearance.theme?.name ?? "System") colors, font, and size. Applies to all log windows.")
         .alert("Log appearance", isPresented: Binding(get: { appearance.error != nil }, set: { if !$0 { appearance.error = nil } })) {
             Button("OK", role: .cancel) { appearance.error = nil }
         } message: { Text(appearance.error ?? "") }
