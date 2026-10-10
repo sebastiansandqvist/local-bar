@@ -49,9 +49,8 @@ struct LogsView: View {
 struct CopyLogCommandButton: View {
     let service: Service
     let paths: AppPaths
-    var external = false
     @State private var copied = false
-    private var available: Bool { !external && FileManager.default.fileExists(atPath: paths.log(service).path) }
+    private var available: Bool { FileManager.default.fileExists(atPath: paths.log(service).path) }
 
     var body: some View {
         Button(copied ? "Copied!" : "Copy logs tail command") {

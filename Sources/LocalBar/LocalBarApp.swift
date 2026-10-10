@@ -181,7 +181,6 @@ struct ServiceRow: View {
         .contextMenu {
             Button("Open in browser") { if let url = URL(string: service.url) { NSWorkspace.shared.open(url) } }
             Button("Show logs…") { store.showLogs(service) }
-            CopyLogCommandButton(service: service, paths: store.paths, external: snapshot.state == .external)
             Button("Open project folder") { NSWorkspace.shared.open(service.folder) }
             Button("Copy address") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(service.url, forType: .string) }
             Divider()
