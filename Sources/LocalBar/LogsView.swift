@@ -22,14 +22,12 @@ struct LogsView: View {
     let service: Service
     let paths: AppPaths
     @State private var content = LogContent(text: "Loading…")
-    @State private var follow = true
     @ObservedObject private var appearance = LogAppearance.shared
     var body: some View {
         VStack(spacing: 0) {
             HStack {
                 LogAppearanceMenu()
                 Spacer()
-                Toggle("Live updates", isOn: $follow).toggleStyle(.checkbox)
                 CopyLogCommandButton(service: service, paths: paths)
                 Button("Open log file") { NSWorkspace.shared.open(paths.log(service)) }
             }.padding(12)
@@ -40,10 +38,8 @@ struct LogsView: View {
         .task {
             let reader = LogReader()
             while !Task.isCancelled {
-                if follow || content.text == "Loading…" {
-                    let next = await reader.read(paths.log(service))
-                    if !Task.isCancelled && next != content { content = next }
-                }
+                let next = await reader.read(paths.log(service))
+                if !Task.isCancelled && next != content { content = next }
                 do { try await Task.sleep(nanoseconds: 1_000_000_000) } catch { break }
             }
         }

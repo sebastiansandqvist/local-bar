@@ -22,7 +22,6 @@ private final class LogPreviewPanel: NSPanel {
     private weak var pressedAnchor: LogPreviewAnchorView?
     private var currentID: String?
     private var pointer: NSPoint?
-    private var optionOnly = false
     private var suppressed = false
     private var side: LogPreviewPlacement.Side?
     private var previousMouseMovedEvents = false
@@ -34,13 +33,12 @@ private final class LogPreviewPanel: NSPanel {
         window.acceptsMouseMovedEvents = true
         side = nil
         pointer = nil
-        updateModifiers(NSEvent.modifierFlags)
-        monitor = NSEvent.addLocalMonitorForEvents(matching: [.flagsChanged, .mouseMoved, .mouseEntered, .mouseExited, .leftMouseDown, .leftMouseUp, .leftMouseDragged, .rightMouseDown, .keyDown, .scrollWheel]) { [weak self] event in
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .mouseEntered, .mouseExited, .leftMouseDown, .leftMouseUp, .leftMouseDragged, .rightMouseDown, .keyDown, .scrollWheel]) { [weak self] event in
             guard let self else { return event }
             switch event.type {
             case .leftMouseDown:
-                self.updateModifiers(event.modifierFlags)
-                guard self.optionOnly, let window = self.menuWindow, event.window === window,
+                let modifiers = event.modifierFlags.intersection([.option, .command, .control, .shift, .function])
+                guard modifiers == .option, let window = self.menuWindow, event.window === window,
                       let anchor = self.anchor(at: event.locationInWindow, in: window) else { return event }
                 self.pressedAnchor = anchor
                 self.suppressed = true
@@ -57,16 +55,13 @@ private final class LogPreviewPanel: NSPanel {
                 }
                 return nil
             case .leftMouseDragged:
+                self.suppressed = true
+                self.dismiss()
                 return self.pressedAnchor == nil ? event : nil
-            case .flagsChanged:
-                self.suppressed = false
-                self.updateModifiers(event.modifierFlags)
-                self.refresh()
             case .mouseMoved, .mouseEntered, .mouseExited:
                 guard event.window === self.menuWindow || event.type == .mouseMoved else { return event }
                 self.suppressed = false
                 self.pointer = event.window === self.menuWindow ? event.locationInWindow : nil
-                self.updateModifiers(event.modifierFlags)
                 self.refresh()
             case .scrollWheel:
                 self.pointer = event.window === self.menuWindow ? event.locationInWindow : nil
@@ -100,7 +95,7 @@ private final class LogPreviewPanel: NSPanel {
     func unregister(_ anchor: LogPreviewAnchorView) { anchors.remove(anchor); refresh() }
 
     func refresh() {
-        guard optionOnly, !suppressed, let window = menuWindow, window.isVisible else { dismiss(); return }
+        guard !suppressed, let window = menuWindow, window.isVisible else { dismiss(); return }
         let point = pointer ?? window.convertPoint(fromScreen: NSEvent.mouseLocation)
         guard let anchor = anchor(at: point, in: window), anchor.state.canPreviewLogs,
               let service = anchor.service, let log = anchor.log else { dismiss(); return }
@@ -150,10 +145,6 @@ private final class LogPreviewPanel: NSPanel {
             // A non-clipping NSView's visibleRect can extend beyond the row itself.
             $0.window === window && !$0.isHiddenOrHasHiddenAncestor && $0.bounds.intersection($0.visibleRect).contains($0.convert(point, from: nil))
         }
-    }
-
-    private func updateModifiers(_ flags: NSEvent.ModifierFlags) {
-        optionOnly = flags.intersection([.option, .command, .control, .shift, .function]) == .option
     }
 
     private func dismiss() {
