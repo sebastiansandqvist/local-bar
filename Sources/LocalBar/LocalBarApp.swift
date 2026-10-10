@@ -125,6 +125,7 @@ struct ServiceRow: View {
     let service: Service
     @ObservedObject var store: Store
     @State private var hovered = false
+    @State private var urlHovered = false
     private var snapshot: Snapshot { store.snapshots[service.id] ?? Snapshot() }
     private var busy: Bool { store.configurationBusy || store.busy.contains(service.id) }
     private var color: Color {
@@ -148,7 +149,13 @@ struct ServiceRow: View {
                 } label: {
                     Text(URL(string: service.url)?.host ?? service.url)
                         .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
-                }.buttonStyle(.plain).padding(.leading, 13).help("Open \(service.url) · port \(service.port)")
+                        .underline(urlHovered)
+                }
+                .buttonStyle(.plain)
+                .background(LinkCursor())
+                .onHover { urlHovered = $0 }
+                .padding(.leading, 13)
+                .help("Open \(service.url) in your browser · port \(service.port)")
             }.frame(maxWidth: .infinity, alignment: .leading)
             Text(snapshot.state.rawValue).font(.system(size: 11)).foregroundStyle(.secondary)
                 .frame(width: 78, alignment: .trailing).help(snapshot.detail)
@@ -183,5 +190,19 @@ struct ServiceRow: View {
             Divider()
             Button("Service details…") { store.errorMessage = "\(service.group) · \(service.name)\nPort \(service.port)\(snapshot.pid.map { " · PID \($0)" } ?? "")\n\n\(snapshot.detail)" }
         }
+    }
+}
+
+private struct LinkCursor: NSViewRepresentable {
+    func makeNSView(context: Context) -> LinkCursorView { LinkCursorView() }
+    func updateNSView(_ view: LinkCursorView, context: Context) { view.window?.invalidateCursorRects(for: view) }
+
+    final class LinkCursorView: NSView {
+        override func resetCursorRects() {
+            super.resetCursorRects()
+            let rect = bounds.intersection(visibleRect)
+            if !rect.isEmpty { addCursorRect(rect, cursor: .pointingHand) }
+        }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
     }
 }
