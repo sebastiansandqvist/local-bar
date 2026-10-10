@@ -28,8 +28,8 @@ private struct LogAppearanceSettings: Codable, Equatable {
         resized(viewerBaseFont, to: viewerBaseFont.pointSize + (settings.fontSizeAdjustment ?? 0))
     }
     var previewFont: NSFont {
-        let font = selectedFont ?? .monospacedSystemFont(ofSize: 11, weight: .regular)
-        return resized(font, to: font.pointSize - 1)
+        let font = selectedFont ?? .monospacedSystemFont(ofSize: 10, weight: .regular)
+        return resized(font, to: 10)
     }
     func changeFontSize(by points: Double) {
         let size = min(72, max(6, viewerFont.pointSize + points))
