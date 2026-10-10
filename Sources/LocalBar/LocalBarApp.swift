@@ -184,8 +184,6 @@ struct ServiceRow: View {
             Divider()
             Button("Edit server…") { store.showEditor(service) }.disabled(busy)
             Button("Remove server", role: .destructive) { store.remove(service) }.disabled(busy || snapshot.managed)
-            Divider()
-            Button("Service details…") { store.errorMessage = "\(service.group) · \(service.name)\nPort \(service.port)\(snapshot.pid.map { " · PID \($0)" } ?? "")\n\n\(snapshot.detail)" }
         }
     }
 }
