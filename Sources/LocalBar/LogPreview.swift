@@ -19,6 +19,7 @@ private final class LogPreviewPanel: NSPanel {
     private var deactivation: NSObjectProtocol?
     private var task: Task<Void, Never>?
     private var panel: LogPreviewPanel?
+    private weak var pressedAnchor: LogPreviewAnchorView?
     private var currentID: String?
     private var pointer: NSPoint?
     private var optionOnly = false
@@ -34,9 +35,29 @@ private final class LogPreviewPanel: NSPanel {
         side = nil
         pointer = nil
         updateModifiers(NSEvent.modifierFlags)
-        monitor = NSEvent.addLocalMonitorForEvents(matching: [.flagsChanged, .mouseMoved, .mouseEntered, .mouseExited, .rightMouseDown, .keyDown, .scrollWheel]) { [weak self] event in
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.flagsChanged, .mouseMoved, .mouseEntered, .mouseExited, .leftMouseDown, .leftMouseUp, .leftMouseDragged, .rightMouseDown, .keyDown, .scrollWheel]) { [weak self] event in
             guard let self else { return event }
             switch event.type {
+            case .leftMouseDown:
+                self.updateModifiers(event.modifierFlags)
+                guard self.optionOnly, let window = self.menuWindow, event.window === window,
+                      let anchor = self.anchor(at: event.locationInWindow, in: window) else { return event }
+                self.pressedAnchor = anchor
+                self.suppressed = true
+                self.dismiss()
+                // Consume the click so the row's link, restart button, or toggle does not also fire.
+                return nil
+            case .leftMouseUp:
+                guard let pressed = self.pressedAnchor else { return event }
+                self.pressedAnchor = nil
+                if let window = self.menuWindow, event.window === window,
+                   self.anchor(at: event.locationInWindow, in: window) === pressed {
+                    let showLogs = pressed.showLogs
+                    DispatchQueue.main.async { showLogs?() }
+                }
+                return nil
+            case .leftMouseDragged:
+                return self.pressedAnchor == nil ? event : nil
             case .flagsChanged:
                 self.suppressed = false
                 self.updateModifiers(event.modifierFlags)
@@ -67,6 +88,7 @@ private final class LogPreviewPanel: NSPanel {
         if let monitor { NSEvent.removeMonitor(monitor) }
         if let deactivation { NotificationCenter.default.removeObserver(deactivation) }
         monitor = nil; deactivation = nil
+        pressedAnchor = nil
         dismiss()
         menuWindow?.acceptsMouseMovedEvents = previousMouseMovedEvents
         menuWindow = nil
@@ -80,10 +102,8 @@ private final class LogPreviewPanel: NSPanel {
     func refresh() {
         guard optionOnly, !suppressed, let window = menuWindow, window.isVisible else { dismiss(); return }
         let point = pointer ?? window.convertPoint(fromScreen: NSEvent.mouseLocation)
-        guard let anchor = anchors.allObjects.first(where: {
-            // A non-clipping NSView's visibleRect can extend beyond the row itself.
-            $0.window === window && !$0.isHiddenOrHasHiddenAncestor && $0.bounds.intersection($0.visibleRect).contains($0.convert(point, from: nil))
-        }), anchor.state.canPreviewLogs, let service = anchor.service, let log = anchor.log else { dismiss(); return }
+        guard let anchor = anchor(at: point, in: window), anchor.state.canPreviewLogs,
+              let service = anchor.service, let log = anchor.log else { dismiss(); return }
         let row = window.convertToScreen(anchor.convert(anchor.bounds, to: nil))
         let screen = window.screen?.visibleFrame ?? window.frame
         let side = self.side ?? LogPreviewPlacement.side(menu: window.frame, screen: screen, width: 420)
@@ -123,6 +143,13 @@ private final class LogPreviewPanel: NSPanel {
         }
     }
 
+    private func anchor(at point: NSPoint, in window: NSWindow) -> LogPreviewAnchorView? {
+        anchors.allObjects.first {
+            // A non-clipping NSView's visibleRect can extend beyond the row itself.
+            $0.window === window && !$0.isHiddenOrHasHiddenAncestor && $0.bounds.intersection($0.visibleRect).contains($0.convert(point, from: nil))
+        }
+    }
+
     private func updateModifiers(_ flags: NSEvent.ModifierFlags) {
         optionOnly = flags.intersection([.option, .command, .control, .shift, .function]) == .option
     }
@@ -140,6 +167,7 @@ struct LogPreviewAnchor: NSViewRepresentable {
     let service: Service
     let state: ServiceState
     let log: URL
+    let showLogs: () -> Void
     func makeNSView(context: Context) -> LogPreviewAnchorView {
         let view = LogPreviewAnchorView()
         view.controller = controller
@@ -148,6 +176,7 @@ struct LogPreviewAnchor: NSViewRepresentable {
     }
     func updateNSView(_ view: LogPreviewAnchorView, context: Context) {
         view.service = service; view.state = state; view.log = log
+        view.showLogs = showLogs
         controller.refresh()
     }
     static func dismantleNSView(_ view: LogPreviewAnchorView, coordinator: ()) { view.controller?.unregister(view) }
@@ -158,6 +187,7 @@ final class LogPreviewAnchorView: NSView {
     var service: Service?
     var state: ServiceState = .off
     var log: URL?
+    var showLogs: (() -> Void)?
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 

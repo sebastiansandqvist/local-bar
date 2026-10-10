@@ -167,7 +167,9 @@ struct ServiceRow: View {
         }
         .padding(.leading, 16).padding(.trailing, 14).padding(.vertical, 9)
         .background(hovered ? Color.primary.opacity(0.045) : Color.clear)
-        .background(LogPreviewAnchor(controller: store.logPreview, service: service, state: snapshot.state, log: store.paths.log(service)))
+        .background(LogPreviewAnchor(controller: store.logPreview, service: service, state: snapshot.state, log: store.paths.log(service)) {
+            store.showLogs(service)
+        })
         .contentShape(Rectangle()).onHover { hovered = $0 }
         .contextMenu {
             Button("Open in browser") { if let url = URL(string: service.url) { NSWorkspace.shared.open(url) } }
