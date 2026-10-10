@@ -25,6 +25,18 @@ public struct LogContent: Equatable, Sendable {
     public let text: String
     public let runs: [LogRun]
     public init(text: String, runs: [LogRun] = []) { self.text = text; self.runs = runs }
+
+    // A final line terminator is not an extra empty row in the compact preview.
+    public func removingTrailingNewline() -> LogContent {
+        guard text.hasSuffix("\n") else { return self }
+        let trimmed = String(text.dropLast())
+        let range = NSRange(location: 0, length: trimmed.utf16.count)
+        let clipped = runs.compactMap { run -> LogRun? in
+            let intersection = NSIntersectionRange(run.range, range)
+            return intersection.length > 0 ? LogRun(range: intersection, style: run.style) : nil
+        }
+        return LogContent(text: trimmed, runs: clipped)
+    }
 }
 
 // Interpret text styling only. Other terminal commands never reach the text view.

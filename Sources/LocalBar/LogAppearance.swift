@@ -6,6 +6,7 @@ private struct LogAppearanceSettings: Codable, Equatable {
     var imported: LogTheme?
     var useImported = false
     var useFont = false
+    var fontSizeAdjustment: Double?
 }
 
 @MainActor final class LogAppearance: ObservableObject {
@@ -25,8 +26,23 @@ private struct LogAppearanceSettings: Codable, Equatable {
         guard let font = imported?.font else { return nil }
         return NSFont(name: font.name, size: font.size) ?? NSFontManager.shared.font(withFamily: font.name, traits: [], weight: 5, size: font.size)
     }
-    var font: NSFont { theme != nil && useFont ? importedFont ?? Self.defaultFont : Self.defaultFont }
-    static var defaultFont: NSFont { .monospacedSystemFont(ofSize: 11, weight: .regular) }
+    private var selectedFont: NSFont? { theme != nil && useFont ? importedFont : nil }
+    private var viewerBaseFont: NSFont { selectedFont ?? .monospacedSystemFont(ofSize: 13, weight: .regular) }
+    var viewerFont: NSFont {
+        resized(viewerBaseFont, to: viewerBaseFont.pointSize + (settings.fontSizeAdjustment ?? 0))
+    }
+    var previewFont: NSFont {
+        let font = selectedFont ?? .monospacedSystemFont(ofSize: 11, weight: .regular)
+        return resized(font, to: font.pointSize - 1)
+    }
+    func changeFontSize(by points: Double) {
+        let size = min(72, max(6, viewerFont.pointSize + points))
+        settings.fontSizeAdjustment = size - viewerBaseFont.pointSize
+    }
+    func resetFontSize() { settings.fontSizeAdjustment = nil }
+    private func resized(_ font: NSFont, to size: Double) -> NSFont {
+        NSFontManager.shared.convert(font, toSize: min(72, max(6, size)))
+    }
 
     private init() {
         settings = UserDefaults.standard.data(forKey: "logAppearance")
@@ -95,9 +111,15 @@ struct LogAppearanceMenu: View {
             }
             if appearance.importedFont != nil {
                 Divider()
-                Toggle("Use imported font", isOn: Binding(get: { appearance.useFont }, set: { appearance.useFont = $0 }))
+                Toggle("Use imported font and size", isOn: Binding(get: { appearance.useFont }, set: { appearance.useFont = $0 }))
                     .disabled(appearance.theme == nil)
             }
+            Divider()
+            Button("Larger text") { appearance.changeFontSize(by: 1) }.keyboardShortcut("+")
+                .disabled(appearance.viewerFont.pointSize >= 72)
+            Button("Smaller text") { appearance.changeFontSize(by: -1) }.keyboardShortcut("-")
+                .disabled(appearance.viewerFont.pointSize <= 6)
+            Button("Reset text size") { appearance.resetFontSize() }.keyboardShortcut("0")
         } label: { Label("Log appearance", systemImage: "paintpalette") }
         .menuStyle(.borderlessButton).fixedSize()
         .disabled(appearance.importing)

@@ -31,6 +31,16 @@ final class LogPreviewTests: XCTestCase {
         }
     }
 
+    func testPreviewRemovesOnlyFinalTerminatorAndPreservesStyleRanges() {
+        let content = ANSILog.parse("\u{1b}[32m✅ ready\n\u{1b}[0m").removingTrailingNewline()
+        XCTAssertEqual(content.text, "✅ ready")
+        XCTAssertEqual(content.runs.first?.range, NSRange(location: 0, length: content.text.utf16.count))
+        XCTAssertEqual(content.runs.first?.style.foreground, .indexed(2))
+        XCTAssertEqual(ANSILog.parse("ready\n\n").removingTrailingNewline().text, "ready\n")
+        XCTAssertEqual(LogContent(text: "").removingTrailingNewline().text, "")
+        XCTAssertEqual(LogContent(text: "ready").removingTrailingNewline().text, "ready")
+    }
+
     func testSmallPreviewTailKeepsColorsAndHandlesStartup() async throws {
         let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: file) }

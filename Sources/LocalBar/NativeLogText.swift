@@ -3,6 +3,15 @@ import AppKit
 import LocalBarCore
 
 struct NativeLogText: NSViewRepresentable {
+    static let inset = NSSize(width: 12, height: 12)
+    static func previewLineHeight(for font: NSFont) -> CGFloat {
+        ceil(NSLayoutManager().defaultLineHeight(for: font))
+    }
+    static func previewHeight(for content: LogContent, font: NSFont) -> CGFloat {
+        let lines = content.text.split(separator: "\n", omittingEmptySubsequences: false).count
+        return CGFloat(max(1, lines)) * previewLineHeight(for: font) + 2 * inset.height
+    }
+
     let content: LogContent
     let theme: LogTheme?
     let font: NSFont
@@ -24,7 +33,7 @@ struct NativeLogText: NSViewRepresentable {
         view.isEditable = false
         view.isSelectable = !preview
         view.isRichText = false
-        view.textContainerInset = NSSize(width: 12, height: 12)
+        view.textContainerInset = Self.inset
         view.isVerticallyResizable = true
         view.isHorizontallyResizable = preview
         view.autoresizingMask = [.width]
@@ -52,6 +61,12 @@ struct NativeLogText: NSViewRepresentable {
             .foregroundColor: theme?.selectionForeground?.nsColor ?? (theme == nil ? .selectedTextColor : foreground)
         ]
         let styled = NSMutableAttributedString(string: content.text, attributes: [.font: font, .foregroundColor: foreground])
+        if preview {
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.minimumLineHeight = Self.previewLineHeight(for: font)
+            paragraph.maximumLineHeight = paragraph.minimumLineHeight
+            styled.addAttribute(.paragraphStyle, value: paragraph, range: NSRange(location: 0, length: styled.length))
+        }
         var attributes: [ANSIStyle: [NSAttributedString.Key: Any]] = [:]
         for run in content.runs {
             if attributes[run.style] == nil {
@@ -78,8 +93,7 @@ struct NativeLogText: NSViewRepresentable {
         let location = min(selection.location, styled.length)
         view.setSelectedRange(NSRange(location: location, length: min(selection.length, styled.length - location)))
         if preview {
-            view.scrollToEndOfDocument(nil)
-            scroll.contentView.scroll(to: NSPoint(x: 0, y: scroll.contentView.bounds.origin.y))
+            scroll.contentView.scroll(to: .zero)
             scroll.reflectScrolledClipView(scroll.contentView)
         } else if atBottom && selection.length == 0 { view.scrollToEndOfDocument(nil) }
         else { scroll.contentView.scroll(to: origin); scroll.reflectScrolledClipView(scroll.contentView) }

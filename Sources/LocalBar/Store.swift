@@ -170,7 +170,7 @@ import LocalBarCore
         if let window = logWindows[service.id] {
             window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true); return
         }
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 480),
+        let window = LogWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 480),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.title = "\(service.group) · \(service.name) · Logs"
         window.isReleasedWhenClosed = false

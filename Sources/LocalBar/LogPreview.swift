@@ -14,11 +14,11 @@ private final class LogPreviewPanel: NSPanel {
 @MainActor final class LogPreviewController {
     private weak var menuWindow: NSWindow?
     private let anchors = NSHashTable<LogPreviewAnchorView>.weakObjects()
-    private let layoutManager = NSLayoutManager()
     private var monitor: Any?
     private var deactivation: NSObjectProtocol?
     private var task: Task<Void, Never>?
     private var panel: LogPreviewPanel?
+    private var content: LogPreviewContent?
     private weak var pressedAnchor: LogPreviewAnchorView?
     private var currentID: String?
     private var pointer: NSPoint?
@@ -108,8 +108,9 @@ private final class LogPreviewPanel: NSPanel {
         let screen = window.screen?.visibleFrame ?? window.frame
         let side = self.side ?? LogPreviewPlacement.side(menu: window.frame, screen: screen, width: 420)
         self.side = side
-        let font = LogAppearance.shared.font
-        let height = min(320, ceil(layoutManager.defaultLineHeight(for: font)) * 10 + 58)
+        let font = LogAppearance.shared.previewFont
+        let content = currentID == service.id ? self.content ?? LogPreviewContent() : LogPreviewContent()
+        let height = NativeLogText.previewHeight(for: content.log, font: font)
         let frame = LogPreviewPlacement.frame(row: row, menu: window.frame, screen: screen,
                                               size: NSSize(width: 420, height: height), side: side)
         if currentID == service.id, let panel {
@@ -118,7 +119,7 @@ private final class LogPreviewPanel: NSPanel {
         }
         dismiss()
         currentID = service.id
-        let content = LogPreviewContent()
+        self.content = content
         let preview = LogPreviewPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         preview.isReleasedWhenClosed = false
         preview.backgroundColor = .clear
@@ -126,18 +127,19 @@ private final class LogPreviewPanel: NSPanel {
         preview.hasShadow = true
         preview.ignoresMouseEvents = true
         preview.hidesOnDeactivate = true
-        preview.contentViewController = NSHostingController(rootView: LogPreviewView(service: service, content: content))
+        preview.contentViewController = NSHostingController(rootView: LogPreviewView(content: content))
         preview.setFrame(frame, display: false)
         panel = preview
         window.addChildWindow(preview, ordered: .above)
         preview.orderFront(nil)
         // No hover delay or prefetching. Read a small tail only while the preview is visible.
         task = Task { [weak self] in
-            let reader = LogReader(maximumBytes: 16_384, maximumLines: 10, emptyMessage: "Waiting for output…")
+            let maximumLines = max(1, min(10, Int((320 - 2 * NativeLogText.inset.height) / NativeLogText.previewLineHeight(for: font))))
+            let reader = LogReader(maximumBytes: 16_384, maximumLines: maximumLines, emptyMessage: "Waiting for output…")
             while !Task.isCancelled {
-                let next = await reader.read(log)
+                let next = await reader.read(log).removingTrailingNewline()
                 guard !Task.isCancelled, self?.currentID == service.id else { return }
-                if content.log != next { content.log = next }
+                if content.log != next { content.log = next; self?.refresh() }
                 do { try await Task.sleep(nanoseconds: 1_000_000_000) } catch { return }
             }
         }
@@ -157,6 +159,7 @@ private final class LogPreviewPanel: NSPanel {
     private func dismiss() {
         task?.cancel(); task = nil
         currentID = nil
+        content = nil
         if let panel { panel.parent?.removeChildWindow(panel); panel.orderOut(nil); panel.close() }
         panel = nil
     }
@@ -192,17 +195,10 @@ final class LogPreviewAnchorView: NSView {
 }
 
 private struct LogPreviewView: View {
-    let service: Service
     @ObservedObject var content: LogPreviewContent
     @ObservedObject private var appearance = LogAppearance.shared
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("\(service.group) · \(service.name)")
-                .font(.system(size: 11, weight: .medium)).lineLimit(1).padding(.horizontal, 12).padding(.vertical, 9)
-            Divider()
-            NativeLogText(content: content.log, theme: appearance.theme, font: appearance.font, preview: true)
-        }
-        .background(Color(nsColor: .windowBackgroundColor))
+        NativeLogText(content: content.log, theme: appearance.theme, font: appearance.previewFont, preview: true)
         .clipShape(RoundedRectangle(cornerRadius: 9))
         .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.primary.opacity(0.12), lineWidth: 1))
         .allowsHitTesting(false)

@@ -2,6 +2,22 @@ import SwiftUI
 import AppKit
 import LocalBarCore
 
+final class LogWindow: NSWindow {
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        if modifiers == .command || modifiers == [.command, .shift] {
+            switch event.charactersIgnoringModifiers {
+            case "+", "=": LogAppearance.shared.changeFontSize(by: 1)
+            case "-": LogAppearance.shared.changeFontSize(by: -1)
+            case "0": LogAppearance.shared.resetFontSize()
+            default: return super.performKeyEquivalent(with: event)
+            }
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+}
+
 struct LogsView: View {
     let service: Service
     let paths: AppPaths
@@ -18,7 +34,7 @@ struct LogsView: View {
                 Button("Open log file") { NSWorkspace.shared.open(paths.log(service)) }
             }.padding(12)
             Divider()
-            NativeLogText(content: content, theme: appearance.theme, font: appearance.font)
+            NativeLogText(content: content, theme: appearance.theme, font: appearance.viewerFont)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .task {
