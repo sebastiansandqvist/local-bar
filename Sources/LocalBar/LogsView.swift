@@ -29,7 +29,6 @@ struct LogsView: View {
                 LogAppearanceMenu()
                 Spacer()
                 CopyLogCommandButton(service: service, paths: paths)
-                Button("Open log file") { NSWorkspace.shared.open(paths.log(service)) }
             }.padding(12)
             Divider()
             NativeLogText(content: content, theme: appearance.theme, font: appearance.viewerFont)

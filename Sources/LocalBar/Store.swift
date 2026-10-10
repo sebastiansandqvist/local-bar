@@ -9,7 +9,7 @@ import LocalBarCore
     @Published var errorMessage: String?
     @Published var configurationBusy = false
     @Published var configurationError: String?
-    let paths = AppPaths()
+    let paths: AppPaths
     let logPreview = LogPreviewController()
     let manager: Launchd
     private var revisions: [String: Int] = [:]
@@ -19,17 +19,26 @@ import LocalBarCore
     private var poller: Task<Void, Never>?
     private var editorWindow: NSWindow?
     private var logWindows: [String: NSWindow] = [:]
+    private let configurationReader: ConfigurationReader
+    private var appliedConfiguration: Configuration?
+    private var configurationRevision = 0
 
-    init() {
+    init(paths: AppPaths = AppPaths(), startMonitoring: Bool = true) {
+        self.paths = paths
+        configurationReader = ConfigurationReader(file: paths.config)
         manager = Launchd(paths: paths)
         do { services = try paths.load().services } catch { configurationError = error.localizedDescription }
+        guard startMonitoring else { return }
         poller = Task { [weak self] in
             while !Task.isCancelled {
+                await self?.reloadSavedConfiguration()
                 await self?.refresh()
-                try? await Task.sleep(nanoseconds: 4_000_000_000)
+                do { try await Task.sleep(nanoseconds: 4_000_000_000) } catch { break }
             }
         }
     }
+
+    deinit { poller?.cancel() }
 
     var groups: [String] { services.reduce(into: []) { if !$0.contains($1.group) { $0.append($1.group) } } }
     var caddyStatus: String {
@@ -93,8 +102,13 @@ import LocalBarCore
     }
 
     func saveConfiguration(_ config: Configuration) async throws {
+        try await applyConfiguration(config, writeToDisk: true)
+    }
+
+    private func applyConfiguration(_ config: Configuration, writeToDisk: Bool) async throws {
         guard !configurationBusy, busy.isEmpty else { throw LocalBarError("Wait for the current operation to finish.") }
         configurationBusy = true
+        configurationRevision += 1
         defer { configurationBusy = false }
         try config.validate()
         for current in services where !config.services.contains(current) {
@@ -105,7 +119,7 @@ import LocalBarCore
         let previous = Configuration(services: services)
         let caddy = Caddy(paths: paths)
         try await caddy.apply(config.services)
-        do { try paths.write(config, to: paths.config) }
+        do { if writeToDisk { try paths.write(config, to: paths.config) } }
         catch {
             let writeError = error
             do { try await caddy.apply(previous.services) }
@@ -113,16 +127,33 @@ import LocalBarCore
             throw writeError
         }
         services = config.services
+        appliedConfiguration = config
         for service in services { revisions[service.id, default: 0] += 1 }
         snapshots = snapshots.filter { id, _ in services.contains { $0.id == id } }
         configurationError = nil
-        await refresh()
+        if writeToDisk { await refresh() }
     }
 
-    func reloadConfiguration() {
-        Task {
-            do { try await saveConfiguration(paths.load()) }
-            catch { errorMessage = error.localizedDescription }
+    func reloadSavedConfiguration() async {
+        guard !configurationBusy, busy.isEmpty else { return }
+        let revision = configurationRevision
+        let config: Configuration
+        do { config = try await configurationReader.read() }
+        catch {
+            guard revision == configurationRevision, !configurationBusy else { return }
+            let message = "Saved changes were not applied. \(error.localizedDescription)"
+            if configurationError != message { configurationError = message }
+            return
+        }
+        guard revision == configurationRevision, !configurationBusy, busy.isEmpty else { return }
+        guard config != appliedConfiguration else {
+            if configurationError != nil { configurationError = nil }
+            return
+        }
+        do { try await applyConfiguration(config, writeToDisk: false) }
+        catch {
+            let message = "Saved changes were not applied. \(error.localizedDescription)"
+            if configurationError != message { configurationError = message }
         }
     }
 

@@ -68,7 +68,6 @@ struct MenuView: View {
                     Button("Add server…") { store.showEditor() }
                     Divider()
                     Button("Edit configuration…") { store.openConfiguration() }
-                    Button("Reload configuration") { store.reloadConfiguration() }.disabled(!store.busy.isEmpty || store.configurationBusy)
                     Button("Open logs folder") { NSWorkspace.shared.open(store.paths.logs) }
                     Divider()
                     Button("Quit Local Bar") { NSApplication.shared.terminate(nil) }.keyboardShortcut("q")
@@ -80,11 +79,11 @@ struct MenuView: View {
             if let error = store.configurationError {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Configuration needs attention").fontWeight(.medium)
-                    Text(error).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                    Text(error).font(.caption).foregroundStyle(.secondary).lineLimit(3).help(error).textSelection(.enabled)
                     Button("Edit configuration…") { store.openConfiguration() }
-                    Button("Reload") { store.reloadConfiguration() }
                 }.padding(16)
-            } else {
+            }
+            if store.configurationError == nil || !store.services.isEmpty {
                 if store.services.isEmpty {
                     VStack(spacing: 10) {
                         Text("Add your first local server").foregroundStyle(.secondary)
@@ -174,12 +173,11 @@ struct ServiceRow: View {
         }
         .padding(.leading, 16).padding(.trailing, 14).padding(.vertical, 9)
         .background(hovered ? Color.primary.opacity(0.045) : Color.clear)
-        .background(LogPreviewAnchor(controller: store.logPreview, service: service, state: snapshot.state, log: store.paths.log(service)) {
-            store.showLogs(service)
-        })
+        .background(LogPreviewAnchor(controller: store.logPreview, service: service, state: snapshot.state, log: store.paths.log(service)))
         .contentShape(Rectangle()).onHover { hovered = $0 }
+        .onTapGesture { store.showLogs(service) }
+        .accessibilityAction(named: "Show logs") { store.showLogs(service) }
         .contextMenu {
-            Button("Open in browser") { if let url = URL(string: service.url) { NSWorkspace.shared.open(url) } }
             Button("Show logs…") { store.showLogs(service) }
             Button("Open project folder") { NSWorkspace.shared.open(service.folder) }
             Button("Copy address") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(service.url, forType: .string) }
