@@ -29,7 +29,7 @@ If a server is already running in your terminal, you will need to stop it from t
 
 ## Updating
 
-Quit Local Bar, then run this from the repo folder on each Mac. Your servers keep running while the app is closed.
+Quit the app, then run the following script from the repo root:
 
 ```sh
 git pull --ff-only
