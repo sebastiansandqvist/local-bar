@@ -26,3 +26,13 @@ bash scripts/setup-caddy.sh "$(brew --prefix)/etc/Caddyfile"
 ```
 
 If a server is already running in your terminal, you will need to stop it from the terminal before starting it in Local Bar.
+
+## Updating
+
+Quit Local Bar, then run this from the repo folder on each Mac. Your servers keep running while the app is closed.
+
+```sh
+git pull --ff-only
+bash scripts/build-app.sh
+open "build/Local Bar.app"
+```
