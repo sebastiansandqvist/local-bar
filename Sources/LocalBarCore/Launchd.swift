@@ -61,6 +61,9 @@ public actor Launchd {
 
     public static func definition(_ service: Service, log: URL) -> [String: Any] {
         var environment = service.environment
+        if environment["FORCE_COLOR"] == nil, environment["NO_COLOR"] == nil, environment["NODE_DISABLE_COLORS"] == nil {
+            environment["FORCE_COLOR"] = "1"
+        }
         if environment["PATH"] == nil { environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" }
         environment["HOME"] = NSHomeDirectory()
         return [

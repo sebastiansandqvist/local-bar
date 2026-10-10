@@ -45,6 +45,20 @@ final class CoreTests: XCTestCase {
         XCTAssertNil(exited.pid)
     }
 
+    func testColorOutputDefaultsRespectExplicitEnvironment() {
+        var service = sample()
+        func environment() -> [String: String] { Launchd.definition(service, log: URL(fileURLWithPath: "/tmp/log"))["EnvironmentVariables"] as! [String: String] }
+        XCTAssertEqual(environment()["FORCE_COLOR"], "1")
+        service.environment["NO_COLOR"] = "1"
+        XCTAssertNil(environment()["FORCE_COLOR"])
+        service.environment = ["NODE_DISABLE_COLORS": "1"]
+        XCTAssertNil(environment()["FORCE_COLOR"])
+        service.environment = ["FORCE_COLOR": "0"]
+        XCTAssertEqual(environment()["FORCE_COLOR"], "0")
+        service.environment = ["FORCE_COLOR": "3"]
+        XCTAssertEqual(environment()["FORCE_COLOR"], "3")
+    }
+
     func testExternalListenerNeverBecomesOwnedEvenWhenHTTPFails() {
         let snapshot = Snapshot.evaluate(job: Job(loaded: false, pid: nil, exitCode: nil), portOpen: true,
                                          direct: HTTPResult(code: nil, server: nil), proxy: HTTPResult(code: nil, server: nil), hasHealthCheck: false)
