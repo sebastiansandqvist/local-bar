@@ -6,6 +6,7 @@ struct NativeLogText: NSViewRepresentable {
     let content: LogContent
     let theme: LogTheme?
     let font: NSFont
+    var preview = false
     @Environment(\.colorScheme) private var colorScheme
 
     final class Coordinator {
@@ -17,18 +18,18 @@ struct NativeLogText: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeNSView(context: Context) -> NSScrollView {
         let scroll = NSScrollView()
-        scroll.hasVerticalScroller = true
+        scroll.hasVerticalScroller = !preview
         scroll.autohidesScrollers = true
         let view = NSTextView(frame: scroll.bounds)
         view.isEditable = false
-        view.isSelectable = true
+        view.isSelectable = !preview
         view.isRichText = false
         view.textContainerInset = NSSize(width: 12, height: 12)
         view.isVerticallyResizable = true
-        view.isHorizontallyResizable = false
+        view.isHorizontallyResizable = preview
         view.autoresizingMask = [.width]
-        view.textContainer?.widthTracksTextView = true
-        view.textContainer?.containerSize = NSSize(width: scroll.contentSize.width, height: .greatestFiniteMagnitude)
+        view.textContainer?.widthTracksTextView = !preview
+        view.textContainer?.containerSize = NSSize(width: preview ? .greatestFiniteMagnitude : scroll.contentSize.width, height: .greatestFiniteMagnitude)
         scroll.documentView = view
         return scroll
     }
@@ -76,7 +77,11 @@ struct NativeLogText: NSViewRepresentable {
         view.textStorage?.setAttributedString(styled)
         let location = min(selection.location, styled.length)
         view.setSelectedRange(NSRange(location: location, length: min(selection.length, styled.length - location)))
-        if atBottom && selection.length == 0 { view.scrollToEndOfDocument(nil) }
+        if preview {
+            view.scrollToEndOfDocument(nil)
+            scroll.contentView.scroll(to: NSPoint(x: 0, y: scroll.contentView.bounds.origin.y))
+            scroll.reflectScrolledClipView(scroll.contentView)
+        } else if atBottom && selection.length == 0 { view.scrollToEndOfDocument(nil) }
         else { scroll.contentView.scroll(to: origin); scroll.reflectScrolledClipView(scroll.contentView) }
     }
 

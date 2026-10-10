@@ -10,6 +10,7 @@ import LocalBarCore
     @Published var configurationBusy = false
     @Published var configurationError: String?
     let paths = AppPaths()
+    let logPreview = LogPreviewController()
     let manager: Launchd
     private var revisions: [String: Int] = [:]
     @Published private var caddyProbe: HTTPResult?

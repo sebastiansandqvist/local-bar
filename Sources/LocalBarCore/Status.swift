@@ -4,6 +4,8 @@ public enum ServiceState: String, Sendable {
     case checking = "Checking", off = "Off", running = "Running", external = "Elsewhere"
     case starting = "Starting…", stopping = "Stopping…", restarting = "Restarting…"
     case failed = "Failed", unresponsive = "No response", unknown = "Unknown"
+
+    public var canPreviewLogs: Bool { self == .running || self == .starting || self == .restarting }
 }
 
 public struct Snapshot: Sendable, Equatable {

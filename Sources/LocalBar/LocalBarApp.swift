@@ -9,7 +9,7 @@ import LocalBarCore
     }
 }
 
-@MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
+@MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let store = Store()
     private var statusItem: NSStatusItem?
     private let popover = NSPopover()
@@ -27,6 +27,7 @@ import LocalBarCore
         statusItem = item
         popover.behavior = .transient
         popover.animates = false
+        popover.delegate = self
         let host = NSHostingController(rootView: MenuView(store: store))
         host.sizingOptions = [.preferredContentSize]
         popover.contentViewController = host
@@ -41,6 +42,12 @@ import LocalBarCore
     @objc private func toggleMenu() {
         if popover.isShown { popover.performClose(nil) } else { showMenu() }
     }
+
+    func popoverDidShow(_ notification: Notification) {
+        if let window = popover.contentViewController?.view.window { store.logPreview.start(in: window) }
+    }
+
+    func popoverWillClose(_ notification: Notification) { store.logPreview.stop() }
 
     private func showMenu() {
         guard let button = statusItem?.button else { return }
@@ -160,6 +167,7 @@ struct ServiceRow: View {
         }
         .padding(.leading, 16).padding(.trailing, 14).padding(.vertical, 9)
         .background(hovered ? Color.primary.opacity(0.045) : Color.clear)
+        .background(LogPreviewAnchor(controller: store.logPreview, service: service, state: snapshot.state, log: store.paths.log(service)))
         .contentShape(Rectangle()).onHover { hovered = $0 }
         .contextMenu {
             Button("Open in browser") { if let url = URL(string: service.url) { NSWorkspace.shared.open(url) } }
