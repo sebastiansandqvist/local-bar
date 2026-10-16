@@ -31,7 +31,9 @@ import LocalBarCore
         let host = NSHostingController(rootView: MenuView(store: store))
         host.sizingOptions = [.preferredContentSize]
         popover.contentViewController = host
-        showMenu()
+        let loginLaunch = NSAppleEventManager.shared().currentAppleEvent?
+            .paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
+        if !loginLaunch { showMenu() }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -69,6 +71,7 @@ struct MenuView: View {
                     Divider()
                     Button("Edit configuration…") { store.openConfiguration() }
                     Button("Open logs folder") { NSWorkspace.shared.open(store.paths.logs) }
+                    LoginItemToggle(item: store.loginItem)
                     Divider()
                     Button("Quit Local Bar") { NSApplication.shared.terminate(nil) }.keyboardShortcut("q")
                 } label: { Image(systemName: "ellipsis").frame(width: 20, height: 20) }
@@ -110,7 +113,21 @@ struct MenuView: View {
                 Spacer()
                 Circle().fill(store.caddyStatus == "Available" ? Color.green : Color.secondary).frame(width: 6, height: 6)
                 Text(store.caddyStatus).foregroundStyle(.secondary)
+                if (!store.caddyState.available || !store.caddyState.managed) && !store.caddyBusy {
+                    Button(store.caddyState.available ? "Set up Caddy…" : "Start Caddy") { store.startCaddy() }.disabled(store.configurationBusy)
+                }
+                Menu {
+                    Button("Restart Caddy") { store.startCaddy(restart: true) }
+                        .disabled(!store.caddyState.managed || store.caddyBusy || store.configurationBusy)
+                    Button("Show logs…") { store.showCaddyLogs() }
+                } label: { Image(systemName: "ellipsis").frame(width: 16, height: 16) }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                .help("Caddy controls").accessibilityLabel("Caddy controls")
             }.font(.system(size: 12)).padding(.horizontal, 16).padding(.vertical, 12).help(store.caddyDetail)
+            if let error = store.caddyError {
+                Text(error).font(.caption).foregroundStyle(.secondary).lineLimit(3).help(error)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16).padding(.bottom, 12)
+            }
         }
         .frame(width: 410)
         .fixedSize(horizontal: false, vertical: true)
@@ -128,11 +145,10 @@ struct ServiceRow: View {
     private var snapshot: Snapshot { store.snapshots[service.id] ?? Snapshot() }
     private var busy: Bool { store.configurationBusy || store.busy.contains(service.id) }
     private var color: Color {
-        if snapshot.routeWarning { return .orange }
         switch snapshot.state {
-        case .running: return .green
+        case .running, .external: return .green
         case .failed, .unresponsive: return .red
-        case .external, .starting, .stopping, .restarting: return .orange
+        case .starting, .stopping, .restarting: return .orange
         default: return .secondary
         }
     }
@@ -156,7 +172,10 @@ struct ServiceRow: View {
                 .padding(.leading, 13)
                 .help("Open \(service.url) in your browser · port \(service.port)")
             }.frame(maxWidth: .infinity, alignment: .leading)
-            Text(snapshot.state.rawValue).font(.system(size: 11)).foregroundStyle(.secondary)
+            HStack(spacing: 4) {
+                if snapshot.routeWarning { Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange) }
+                Text(snapshot.state.rawValue)
+            }.font(.system(size: 11)).foregroundStyle(.secondary)
                 .frame(width: 78, alignment: .trailing).help(snapshot.detail)
                 .accessibilityLabel("\(service.name): \(snapshot.state.rawValue). \(snapshot.detail)")
             Button { store.perform(.restart, on: service) } label: {
@@ -199,5 +218,16 @@ private struct LinkCursor: NSViewRepresentable {
             if !rect.isEmpty { addCursorRect(rect, cursor: .pointingHand) }
         }
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+}
+
+private struct LoginItemToggle: View {
+    @ObservedObject var item: LoginItem
+    var body: some View {
+        Toggle("Open at Login", isOn: Binding(get: { item.enabled }, set: { item.setEnabled($0) }))
+            .onAppear { item.refresh() }
+            .alert("Open at Login", isPresented: Binding(get: { item.error != nil }, set: { if !$0 { item.error = nil } })) {
+                Button("OK", role: .cancel) { item.error = nil }
+            } message: { Text(item.error ?? "") }
     }
 }

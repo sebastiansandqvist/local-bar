@@ -65,7 +65,8 @@ public enum Monitor {
             let open = await Probes.portOpen(active.port)
             guard active.healthPath != nil else {
                 if job.loaded && job.pid == nil {
-                    return Snapshot(state: .failed, managed: true, detail: "The process exited. Open its logs for details.")
+                    return Snapshot(state: .failed, managed: true,
+                        detail: "The process exited\(job.exitCode.map { " with code \($0)" } ?? ""). Open its logs for details.")
                 }
                 if job.loaded {
                     return Snapshot(state: open ? .running : .unresponsive, managed: true, pid: job.pid,

@@ -12,7 +12,7 @@ import LocalBarCore
         let config = Configuration(services: [service])
         try paths.write(config, to: paths.config)
         addTeardownBlock { try? FileManager.default.removeItem(at: paths.root) }
-        return (Store(paths: paths, startMonitoring: false), paths, config)
+        return (Store(paths: paths, startMonitoring: false, caddy: Caddy(paths: paths, available: { true })), paths, config)
     }
 
     func testAtomicSaveAppliesRoutesWithoutRewritingTheSavedFile() async throws {
@@ -88,4 +88,46 @@ import LocalBarCore
         XCTAssertEqual(store.services, changed.services)
         XCTAssertNil(store.configurationError)
     }
+    func testSavesNewConfigurationWhileCaddyIsStopped() async throws {
+        let (_, paths, initial) = try fixture()
+        let caddy = Caddy(paths: paths, available: { false })
+        let main = paths.root.appendingPathComponent("Caddyfile")
+        try "import \"\(caddy.routes.path)\"".write(to: main, atomically: true, encoding: .utf8)
+        try paths.write(CaddySettings(executable: "/usr/bin/true", config: main.path), to: caddy.settingsFile)
+        let store = Store(paths: paths, startMonitoring: false, caddy: caddy)
+        var changed = initial
+        changed.services[0].port = 49997
+        try await store.saveConfiguration(changed)
+        XCTAssertEqual(store.services, changed.services)
+        XCTAssertEqual(try paths.load(), changed)
+        XCTAssertNil(store.configurationError)
+        XCTAssertTrue(try String(contentsOf: caddy.routes).contains("localhost:49997"))
+    }
+
+    func testStartupTimeoutReleasesControlsAndPublishesCurrentStatus() async throws {
+        guard ProcessInfo.processInfo.environment["LOCAL_BAR_INTEGRATION"] == "1" else {
+            throw XCTSkip("Set LOCAL_BAR_INTEGRATION=1 to exercise an isolated launchd job.")
+        }
+        let (store, paths, config) = try fixture()
+        var service = config.services[0]
+        for port in 49000..<49100 {
+            if !(await Probes.portOpen(port)) { service.port = port; break }
+        }
+        service.startupTimeout = 1
+        addTeardownBlock {
+            let manager = Launchd(paths: paths)
+            if (try? await manager.job(service).loaded) == true { try await manager.stop(service) }
+        }
+        store.perform(.start, on: service)
+        XCTAssertTrue(store.busy.contains(service.id))
+        let deadline = Date().addingTimeInterval(8)
+        while store.busy.contains(service.id), Date() < deadline {
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        XCTAssertFalse(store.busy.contains(service.id))
+        XCTAssertEqual(store.snapshots[service.id]?.state, .unresponsive)
+        XCTAssertEqual(store.snapshots[service.id]?.managed, true)
+        XCTAssertNotNil(store.errorMessage)
+    }
+
 }

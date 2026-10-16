@@ -8,7 +8,15 @@ public struct CaddySettings: Codable, Sendable {
 
 public struct Caddy: Sendable {
     public let paths: AppPaths
-    public init(paths: AppPaths = AppPaths()) { self.paths = paths }
+    private let available: @Sendable () async -> Bool
+    public static let adminURL = URL(string: "http://127.0.0.1:2019/config/admin/")!
+    public init(paths: AppPaths = AppPaths(), available: @escaping @Sendable () async -> Bool = {
+        await Probes.http(Caddy.adminURL).code == 200
+    }) { self.paths = paths; self.available = available }
+    public func isAvailable() async -> Bool { await available() }
+    public func settings() throws -> CaddySettings {
+        try JSONDecoder().decode(CaddySettings.self, from: Data(contentsOf: settingsFile))
+    }
     public var routes: URL { paths.root.appendingPathComponent("routes.caddyfile") }
     public var settingsFile: URL { paths.root.appendingPathComponent("caddy.json") }
     public var configured: Bool { FileManager.default.fileExists(atPath: settingsFile.path) }
@@ -47,21 +55,28 @@ public struct Caddy: Sendable {
     }
 
     // Keep the previous routes if validation or reload fails.
-    public func apply(_ services: [Service]) async throws {
+    @discardableResult public func apply(_ services: [Service]) async throws -> Bool {
         let data = Data(try Self.render(services).utf8)
         let previous = try? Data(contentsOf: routes)
         try data.write(to: routes, options: .atomic)
-        guard configured else { return }
+        guard configured else { return false }
         do {
-            let settings = try JSONDecoder().decode(CaddySettings.self, from: Data(contentsOf: settingsFile))
+            let settings = try settings()
             let root = try String(contentsOfFile: settings.config, encoding: .utf8)
             guard root.contains("import \"\(routes.path)\"") else {
                 throw LocalBarError("Caddy's configuration no longer imports Local Bar routes. Run scripts/setup-caddy.sh again.")
             }
-            for action in ["validate", "reload"] {
-                let result = try await Commands.run(settings.executable, [action, "--config", settings.config, "--adapter", "caddyfile"])
-                guard result.status == 0 else { throw LocalBarError("Caddy \(action) failed. Your changes were not applied.\n\n\(result.output)") }
+            let arguments = ["--config", settings.config, "--adapter", "caddyfile"]
+            let validation = try await Commands.run(settings.executable, ["validate"] + arguments)
+            guard validation.status == 0 else { throw LocalBarError("Caddy configuration is invalid.\n\n\(validation.output)") }
+            guard await isAvailable() else { return false }
+            let reload = try await Commands.run(settings.executable, ["reload"] + arguments)
+            guard reload.status == 0 else {
+                // Caddy may have stopped between the availability check and reload.
+                if !(await isAvailable()) { return false }
+                throw LocalBarError("Caddy reload failed.\n\n\(reload.output)")
             }
+            return true
         } catch {
             if let previous { try previous.write(to: routes, options: .atomic) }
             else { try? FileManager.default.removeItem(at: routes) }

@@ -40,7 +40,7 @@ final class CaddyTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let paths = AppPaths(root: root); try paths.prepare()
-        let caddy = Caddy(paths: paths)
+        let caddy = Caddy(paths: paths, available: { true })
         try "previous routes".write(to: caddy.routes, atomically: true, encoding: .utf8)
         let main = root.appendingPathComponent("Caddyfile")
         try "import \"\(caddy.routes.path)\"\n".write(to: main, atomically: true, encoding: .utf8)
@@ -54,11 +54,38 @@ final class CaddyTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: main), "import \"\(caddy.routes.path)\"\n")
     }
 
+    func testOfflineChangesValidateAndWaitForCaddyWithoutReloading() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let paths = AppPaths(root: root); try paths.prepare()
+        let caddy = Caddy(paths: paths, available: { false })
+        let main = root.appendingPathComponent("Caddyfile")
+        try "import \"\(caddy.routes.path)\"".write(to: main, atomically: true, encoding: .utf8)
+        let binary = root.appendingPathComponent("fake-caddy")
+        try "#!/bin/sh\n[ \"$1\" = validate ] && exit 0\necho 'Must not reload while offline'\nexit 1\n".write(to: binary, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: binary.path)
+        try paths.write(CaddySettings(executable: binary.path, config: main.path), to: caddy.settingsFile)
+        let applied = try await caddy.apply([service()])
+        XCTAssertFalse(applied)
+        XCTAssertTrue(try String(contentsOf: caddy.routes).contains("example.localhost"))
+    }
+
+    func testServiceUsesSavedConfigurationAndSurvivesLoginAndExit() throws {
+        let settings = CaddySettings(executable: "/opt/homebrew/bin/caddy", config: "/tmp/custom Caddyfile")
+        let log = URL(fileURLWithPath: "/tmp/caddy.log")
+        let definition = CaddyService.definition(settings: settings, log: log)
+        XCTAssertEqual(definition["ProgramArguments"] as? [String], [settings.executable, "run", "--config", settings.config, "--adapter", "caddyfile"])
+        XCTAssertEqual(definition["RunAtLoad"] as? Bool, true)
+        XCTAssertEqual(definition["KeepAlive"] as? Bool, true)
+        XCTAssertEqual(definition["ThrottleInterval"] as? Int, 10)
+        XCTAssertEqual(definition["StandardErrorPath"] as? String, log.path)
+    }
+
     func testSuccessfulReloadAndRemoval() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let paths = AppPaths(root: root); try paths.prepare()
-        let caddy = Caddy(paths: paths)
+        let caddy = Caddy(paths: paths, available: { true })
         let main = root.appendingPathComponent("Caddyfile")
         try "import \"\(caddy.routes.path)\"".write(to: main, atomically: true, encoding: .utf8)
         try paths.write(CaddySettings(executable: "/usr/bin/true", config: main.path), to: caddy.settingsFile)

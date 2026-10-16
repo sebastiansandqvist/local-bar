@@ -1,27 +1,6 @@
 import Foundation
 import Darwin
 
-public struct CommandResult: Sendable {
-    public let status: Int32
-    public let output: String
-}
-
-public enum Commands {
-    public static func run(_ executable: String, _ arguments: [String]) async throws -> CommandResult {
-        try await Task.detached(priority: .utility) {
-            let process = Process()
-            let pipe = Pipe()
-            process.executableURL = URL(fileURLWithPath: executable)
-            process.arguments = arguments
-            process.standardOutput = pipe; process.standardError = pipe
-            try process.run()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            process.waitUntilExit()
-            return CommandResult(status: process.terminationStatus, output: String(decoding: data, as: UTF8.self))
-        }.value
-    }
-}
-
 public struct Job: Sendable {
     public let loaded: Bool
     public let pid: Int32?

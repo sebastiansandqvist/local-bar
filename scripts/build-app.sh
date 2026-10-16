@@ -6,6 +6,7 @@ BIN_DIR="$(swift build -c release --show-bin-path)"
 APP="$PWD/build/Local Bar.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_DIR/LocalBar" "$APP/Contents/MacOS/LocalBar"
+cp "$BIN_DIR/LocalBarSetup" "$APP/Contents/MacOS/LocalBarSetup"
 cp THIRD_PARTY_NOTICES.txt "$APP/Contents/Resources/THIRD_PARTY_NOTICES.txt"
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
