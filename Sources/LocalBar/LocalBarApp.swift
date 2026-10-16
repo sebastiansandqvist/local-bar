@@ -110,12 +110,6 @@ struct MenuView: View {
             HStack(spacing: 7) {
                 Image(systemName: "network").font(.system(size: 12))
                 Text("Caddy")
-                Spacer()
-                Circle().fill(store.caddyStatus == "Available" ? Color.green : Color.secondary).frame(width: 6, height: 6)
-                Text(store.caddyStatus).foregroundStyle(.secondary)
-                if (!store.caddyState.available || !store.caddyState.managed) && !store.caddyBusy {
-                    Button(store.caddyState.available ? "Set up Caddy…" : "Start Caddy") { store.startCaddy() }.disabled(store.configurationBusy)
-                }
                 Menu {
                     Button("Restart Caddy") { store.startCaddy(restart: true) }
                         .disabled(!store.caddyState.managed || store.caddyBusy || store.configurationBusy)
@@ -123,6 +117,12 @@ struct MenuView: View {
                 } label: { Image(systemName: "ellipsis").frame(width: 16, height: 16) }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
                 .help("Caddy controls").accessibilityLabel("Caddy controls")
+                Spacer()
+                Circle().fill(store.caddyStatus == "Available" ? Color.green : Color.secondary).frame(width: 6, height: 6)
+                Text(store.caddyStatus).foregroundStyle(.secondary)
+                if (!store.caddyState.available || !store.caddyState.managed) && !store.caddyBusy {
+                    Button(store.caddyState.available ? "Set up Caddy…" : "Start Caddy") { store.startCaddy() }.disabled(store.configurationBusy)
+                }
             }.font(.system(size: 12)).padding(.horizontal, 16).padding(.vertical, 12).help(store.caddyDetail)
             if let error = store.caddyError {
                 Text(error).font(.caption).foregroundStyle(.secondary).lineLimit(3).help(error)
