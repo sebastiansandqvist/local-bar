@@ -31,16 +31,17 @@ import LocalBarCore
     private var appliedConfiguration: Configuration?
     private var configurationRevision = 0
 
-    init(paths: AppPaths = AppPaths(), startMonitoring: Bool = true, caddy: Caddy? = nil) {
+    init(paths: AppPaths = AppPaths(), startMonitoring: Bool = true, caddy: Caddy? = nil,
+         caddyService: CaddyService? = nil) {
         self.paths = paths
         self.caddy = caddy ?? Caddy(paths: paths)
-        caddyService = CaddyService(paths: paths)
+        self.caddyService = caddyService ?? CaddyService(paths: paths, caddy: self.caddy)
         configurationReader = ConfigurationReader(file: paths.config)
         manager = Launchd(paths: paths)
         do { services = try paths.load().services } catch { configurationError = error.localizedDescription }
         guard startMonitoring else { return }
         poller = Task { [weak self] in
-            if self?.configurationError == nil, self?.caddy.configured == true { await self?.runCaddy() }
+            await self?.prepareCaddy()
             while !Task.isCancelled {
                 await self?.reloadSavedConfiguration()
                 await self?.refresh()
@@ -59,24 +60,41 @@ import LocalBarCore
     }
     var caddyDetail: String {
         if let caddyError { return caddyError }
-        if !caddyState.available { return "Caddy is unavailable. Start it to use your local domains." }
+        guard caddyChecked else { return "Checking Caddy." }
+        if !caddyState.available {
+            return caddyState.managed ? "Start Caddy to use your local domains." : "Set up Caddy to use your local domains."
+        }
         return caddyState.managed ? "Starts at boot and restarts automatically if it exits." : "Caddy is running outside Local Bar."
     }
+    var caddyActionTitle: String? {
+        guard caddyChecked, !caddyBusy, !caddyState.available else { return nil }
+        return caddyState.managed ? "Start" : "Set up…"
+    }
+    func prepareCaddy() async {
+        await checkCaddy()
+        // Automatic startup only resumes our own service. A missing job isn't
+        // evidence of a port-permission problem or a reason to request setup.
+        if configurationError == nil, caddy.configured, caddyState.managed, !caddyState.available {
+            await runCaddy()
+        }
+    }
     func startCaddy(restart: Bool = false) { Task { await runCaddy(restart: restart, interactive: true) } }
-    private func runCaddy(restart: Bool = false, interactive: Bool = false) async {
+    func runCaddy(restart: Bool = false, interactive: Bool = false) async {
         guard !caddyBusy, !configurationBusy else { return }
         caddyBusy = true; caddyRestarting = restart; caddyError = nil
         defer { caddyBusy = false }
         do {
             try await caddyService.start(services: services, restart: restart)
             routesPending = false
-        } catch let error as CaddyInstallationRequired {
-            caddyError = error.localizedDescription
-            if interactive { openCaddySetup() }
+        } catch is CaddyInstallationRequired {
+            // Setup is an action, not a persistent error. Recheck before opening
+            // Terminal in case an existing installation has just finished starting.
+            await checkCaddy()
+            if interactive && !caddyState.available && !caddyState.managed { openCaddySetup() }
         } catch { caddyError = error.localizedDescription }
         await checkCaddy()
     }
-    private func checkCaddy() async {
+    func checkCaddy() async {
         lastCaddyCheck = Date()
         caddyState = await caddyService.status()
         caddyChecked = true

@@ -10,29 +10,37 @@ public struct CaddyServiceStatus: Sendable {
 }
 
 public struct CaddyInstallationRequired: LocalizedError, Sendable {
-    public var errorDescription: String? { "Caddy needs a one-time administrator setup to use port 80. Use the Caddy setup button to continue in Terminal." }
+    public var errorDescription: String? { "Set up Caddy to use local domains." }
 }
 
 public actor CaddyService {
     public static let label = "app.localbar.caddy"
     public static let plist = URL(fileURLWithPath: "/Library/LaunchDaemons/\(label).plist")
     private let caddy: Caddy
+    private let readJob: @Sendable () async throws -> Job
     public let log: URL
     private let domain = "system"
     private var operating = false
     private var target: String { "\(domain)/\(Self.label)" }
 
-    public init(paths: AppPaths = AppPaths()) {
-        caddy = Caddy(paths: paths)
+    public init(paths: AppPaths = AppPaths(), caddy: Caddy? = nil) {
+        self.caddy = caddy ?? Caddy(paths: paths)
+        readJob = { try await Self.systemJob() }
         log = paths.logs.appendingPathComponent("caddy.log")
     }
-    private func job() async throws -> Job {
-        let result = try await Commands.run("/bin/launchctl", ["print", target])
+    init(caddy: Caddy, readJob: @escaping @Sendable () async throws -> Job) {
+        self.caddy = caddy
+        self.readJob = readJob
+        log = caddy.paths.logs.appendingPathComponent("caddy.log")
+    }
+    private static func systemJob() async throws -> Job {
+        let result = try await Commands.run("/bin/launchctl", ["print", "system/\(label)"])
         if result.status != 0 && !result.output.lowercased().contains("could not find service") {
             throw LocalBarError("Cannot read Caddy's background service: \(result.output)")
         }
         return Job.parse(result)
     }
+    private func job() async throws -> Job { try await readJob() }
     public func status() async -> CaddyServiceStatus {
         async let available = caddy.isAvailable()
         let managed = (try? await job().loaded) == true
@@ -57,8 +65,20 @@ public actor CaddyService {
         operating = true
         defer { operating = false }
         guard caddy.configured else { throw LocalBarError("Set up Caddy first with bash scripts/setup-caddy.sh from the Local Bar repo.") }
+        // Homebrew, Terminal, and older installations can already be serving our
+        // domains without a Local Bar launchd job. Ownership only gates restart.
+        let available = await caddy.isAvailable()
+        if available && !restart {
+            guard try await caddy.apply(services) else {
+                throw LocalBarError("Caddy stopped before its configuration could be updated.")
+            }
+            return
+        }
         let current = try await job()
-        guard current.loaded else { throw CaddyInstallationRequired() }
+        guard current.loaded else {
+            if available { throw LocalBarError("Caddy is running outside Local Bar. Restart it where it was started.") }
+            throw CaddyInstallationRequired()
+        }
         try await caddy.apply(services)
         if restart, await caddy.isAvailable() {
             // launchd restarts the service after a graceful stop, without another

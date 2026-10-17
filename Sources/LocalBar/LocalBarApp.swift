@@ -120,14 +120,15 @@ struct MenuView: View {
                 Spacer()
                 Circle().fill(store.caddyStatus == "Available" ? Color.green : Color.secondary).frame(width: 6, height: 6)
                 Text(store.caddyStatus).foregroundStyle(.secondary)
-                if (!store.caddyState.available || !store.caddyState.managed) && !store.caddyBusy {
-                    Button(store.caddyState.available ? "Set up Caddy…" : "Start Caddy") { store.startCaddy() }.disabled(store.configurationBusy)
+                if let error = store.caddyError {
+                    Button { store.errorMessage = "Caddy\n\n\(error)" } label: {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    }.buttonStyle(.plain).help(error).accessibilityLabel("Caddy error details")
+                }
+                if let title = store.caddyActionTitle {
+                    Button(title) { store.startCaddy() }.disabled(store.configurationBusy)
                 }
             }.font(.system(size: 12)).padding(.horizontal, 16).padding(.vertical, 12).help(store.caddyDetail)
-            if let error = store.caddyError {
-                Text(error).font(.caption).foregroundStyle(.secondary).lineLimit(3).help(error)
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16).padding(.bottom, 12)
-            }
         }
         .frame(width: 410)
         .fixedSize(horizontal: false, vertical: true)
